@@ -1,0 +1,378 @@
+C51 COMPILER V6.02  SDCARD                                                                 11/30/2015 00:31:38 PAGE 1   
+
+
+C51 COMPILER V6.02, COMPILATION OF MODULE SDCARD
+OBJECT MODULE PLACED IN .\sdcard.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE .\sdcard.c DEBUG OBJECTEXTEND
+
+stmt level    source
+
+   1          #include "sdcard.h"
+   2          #include "spi.h"
+   3          #include "PORT.H"
+   4          #include <stdio.h>
+   5          
+   6          uint8_t SD_Card_Type = Type2;
+   7          /***********************************************************************
+   8          DESC: Sends Command to SD Card
+   9          INPUT: Command, Arggument
+  10          RETURNS: erroe flag in case of error
+  11          CAUTION: None
+  12          ************************************************************************/
+  13          uint8_t send_command(uint8_t command, uint32_t argument)
+  14          {
+  15   1      	uint8_t error_flag=no_errors, send_val, return_val, index;
+  16   1      	if(	command < 64)
+  17   1      	{
+  18   2      		send_val = (0x40|command);
+  19   2      		error_flag = SPI_Transfer( send_val, &return_val);
+  20   2      		index=24;
+  21   2      		while((error_flag == no_errors) && (index<25))
+  22   2      		{
+  23   3      			send_val=(uint8_t)(argument >> index);
+  24   3      			error_flag = SPI_Transfer( send_val, &return_val);
+  25   3      			index= index-8;
+  26   3      		}
+  27   2      		if(	command == 0)
+  28   2      		{
+  29   3      			send_val = 0x95;
+  30   3      		}
+  31   2      		else if (command ==8)
+  32   2      		{
+  33   3      			send_val = 0x87;
+  34   3      		}
+  35   2      		else
+  36   2      		{
+  37   3      			send_val = 0x01;
+  38   3      		}
+  39   2      
+  40   2      		if(	error_flag == no_errors)
+  41   2      		{
+  42   3      			error_flag = SPI_Transfer( send_val, &return_val);
+  43   3      		}
+  44   2      		else
+  45   2      		{
+  46   3      			error_flag = SPI_error;
+  47   3      			printf("\n SPI error in Send Command \n" );
+  48   3      		}
+  49   2      	}
+  50   1      	else
+  51   1      	{
+  52   2      		error_flag=illegal_command;
+  53   2      		printf("\n illegal_command in Send Command \n" );
+  54   2      	}
+  55   1      	return error_flag;
+C51 COMPILER V6.02  SDCARD                                                                 11/30/2015 00:31:38 PAGE 2   
+
+  56   1      }
+  57          /***********************************************************************
+  58          DESC: Receives response from SD card
+  59          INPUT: No. of bytes, array_out
+  60          RETURNS: Error flag
+  61          CAUTION: None
+  62          ************************************************************************/
+  63          uint8_t receive_response(uint8_t num_of_bytes, uint8_t *array_out)
+  64          {
+  65   1      	uint8_t time_out=0,receive_val,error_flag=0,index;
+  66   1      	do
+  67   1      	{
+  68   2      		error_flag = SPI_Transfer( 0xFF, &receive_val);
+  69   2      		time_out++;
+  70   2      	}
+  71   1      	while((time_out!=0) && (error_flag==no_errors) && (receive_val==0xFF));
+  72   1      	*array_out = receive_val;
+  73   1      	if(time_out ==0)
+  74   1      	{
+  75   2      		error_flag=TIMEOUT_ERROR;
+  76   2      	
+  77   2      	}
+  78   1      	else if(error_flag!=no_errors)
+  79   1      	{
+  80   2      		error_flag=SPI_error;
+  81   2      	}
+  82   1      	else if((receive_val!=0x00)&& (receive_val!=0x01) )
+  83   1      	{
+  84   2      		error_flag=SD_CARD_ERROR;
+  85   2      	}
+  86   1      	else if(num_of_bytes >1)
+  87   1      	{
+  88   2      		for(index=1;index<num_of_bytes;index++)
+  89   2      		{
+  90   3      			SPI_Transfer( 0xFF, &receive_val);
+  91   3      			array_out[index]=receive_val;	
+  92   3      		}
+  93   2      	}
+  94   1      	SPI_Transfer( 0xFF, &receive_val);
+  95   1      	return error_flag;
+  96   1      	
+  97   1      }
+  98          /***********************************************************************
+  99          DESC: Initializes SD Card
+ 100          INPUT: None
+ 101          RETURNS: Nothing
+ 102          CAUTION: Generate Clock pulses manually
+ 103          ************************************************************************/
+ 104          uint8_t SDCard_Init(void)
+ 105          {
+ 106   1      
+ 107   1      	uint8_t index,receive_value[5],sendcmd41=0,timeout,error_flag =no_errors;
+ 108   1      	uint32_t ACMD41_argument=0x40000000;
+ 109   1      	// 80 clock pulses
+ 110   1      	nCS=1;
+ 111   1      	for(index=0;index<=10;index++)
+ 112   1      	{
+ 113   2      		SPI_Transfer( 0xFF, receive_value);
+ 114   2      	}
+ 115   1      	
+ 116   1      
+ 117   1      	//Send CMD 0
+C51 COMPILER V6.02  SDCARD                                                                 11/30/2015 00:31:38 PAGE 3   
+
+ 118   1      	nCS=0;
+ 119   1      	
+ 120   1      	error_flag = send_command(0,0);
+ 121   1      	printf("\n Command 0 Sent \n");
+ 122   1      
+ 123   1      	if(error_flag == no_errors)
+ 124   1      	{
+ 125   2      		error_flag=receive_response(1,receive_value) ;
+ 126   2      	}
+ 127   1      
+ 128   1      	if(error_flag != no_errors)
+ 129   1      	{
+ 130   2      		printf(" CMD 0 error"); 
+ 131   2      		return error_flag;
+ 132   2      	}
+ 133   1      	nCS=1;
+ 134   1      	printf("\n Response for command 0 is %bx \n", *receive_value);
+ 135   1      
+ 136   1      	if( *receive_value == 0x01)
+ 137   1      	{
+ 138   2      		error_flag= no_errors;
+ 139   2      	}
+ 140   1      	else
+ 141   1      	{
+ 142   2      		error_flag= SD_CARD_ERROR;
+ 143   2      		printf(" Incorrect R1 response for command 0"); 
+ 144   2      		return error_flag;
+ 145   2      	}
+ 146   1      
+ 147   1      
+ 148   1      	// Send CMD 8
+ 149   1      	nCS=0;
+ 150   1      	error_flag=send_command(8,0x000001AA);
+ 151   1      	printf("\n Command 8 Sent \n");
+ 152   1      	
+ 153   1      	if(error_flag == no_errors)
+ 154   1      	{
+ 155   2      		error_flag=receive_response(5,receive_value) ;
+ 156   2      	}
+ 157   1      
+ 158   1      	if(error_flag != no_errors)
+ 159   1      	{
+ 160   2      		printf(" CMD 8 error"); 
+ 161   2      		return error_flag;
+ 162   2      	}
+ 163   1      	
+ 164   1      	nCS=1;
+ 165   1      
+ 166   1      	if(receive_value[0] == 0x05)
+ 167   1      	{
+ 168   2      		error_flag = no_errors;
+ 169   2      		ACMD41_argument=0;
+ 170   2      		SD_Card_Type = Type2;
+ 171   2      
+ 172   2      	}
+ 173   1      
+ 174   1      	if(receive_value[3] != 0x01)
+ 175   1      	{
+ 176   2      		error_flag = voltage_error;
+ 177   2      		printf(" Voltage Error");
+ 178   2      		return error_flag;
+ 179   2      	}
+C51 COMPILER V6.02  SDCARD                                                                 11/30/2015 00:31:38 PAGE 4   
+
+ 180   1      
+ 181   1      	if(receive_value[4] != 0xAA)
+ 182   1      	{
+ 183   2      		error_flag = invalid_echopattern;
+ 184   2      		printf(" Invalid Echo Pattern");
+ 185   2      		return error_flag;
+ 186   2      	}
+ 187   1      
+ 188   1      	printf("\n Response for command 8 is \t");
+ 189   1      	for(index=0;index<5;index++)
+ 190   1      	{
+ 191   2      		printf(" %bx \t", *(receive_value+index));
+ 192   2      	}
+ 193   1      
+ 194   1      
+ 195   1      
+ 196   1      	//Send CMD 55 and 41
+ 197   1      	nCS=0 ;
+ 198   1      	timeout=1;
+ 199   1      	while(sendcmd41==0 && timeout!=0)
+ 200   1      	{
+ 201   2      		error_flag =send_command(55,0);
+ 202   2      		printf("\n \n Command 55 Sent \n");
+ 203   2      
+ 204   2      		if(error_flag == no_errors)
+ 205   2      		{
+ 206   3      		error_flag=receive_response(1,receive_value) ;
+ 207   3      		}
+ 208   2      
+ 209   2      		if(error_flag != no_errors)
+ 210   2      		{
+ 211   3      		printf(" CMD 55 error"); 
+ 212   3      		return error_flag;
+ 213   3      		}
+ 214   2      
+ 215   2      		printf("\n Response for command 55 is %bx \n", *receive_value);
+ 216   2      	
+ 217   2      	
+ 218   2         		error_flag = send_command(41,0x40000000);
+ 219   2      
+ 220   2      		if(error_flag == no_errors)
+ 221   2      		{
+ 222   3      		error_flag=receive_response(1,receive_value) ;
+ 223   3      		}
+ 224   2      
+ 225   2      		if(error_flag != no_errors)
+ 226   2      		{
+ 227   3      		printf(" CMD 41 error"); 
+ 228   3      		return error_flag;
+ 229   3      		}
+ 230   2      
+ 231   2      		if(*receive_value == 0x00)
+ 232   2      		{
+ 233   3      			sendcmd41 =1;	
+ 234   3      		}
+ 235   2      		timeout++;
+ 236   2      	}
+ 237   1      	nCS=1;
+ 238   1      
+ 239   1      	printf("\n \n Command 41 Sent \n");
+ 240   1      	printf("\n Response for command 41 is %bx \n", *receive_value);
+ 241   1      
+C51 COMPILER V6.02  SDCARD                                                                 11/30/2015 00:31:38 PAGE 5   
+
+ 242   1      
+ 243   1      	//Send CMD 58
+ 244   1      	nCS=0;
+ 245   1      	error_flag =send_command(58,0);
+ 246   1      	printf("\n Command 58 Sent \n");
+ 247   1      
+ 248   1      	    if(error_flag == no_errors)
+ 249   1      		{
+ 250   2      		error_flag=receive_response(5,receive_value) ;
+ 251   2      		}
+ 252   1      
+ 253   1      		if(error_flag != no_errors)
+ 254   1      		{
+ 255   2      		printf(" CMD 58 error"); 
+ 256   2      		return error_flag;
+ 257   2      		}
+ 258   1      
+ 259   1      	nCS=1;
+ 260   1      	printf("\n Response for command 58 is \t");
+ 261   1      	for(index=0;index<5;index++)
+ 262   1      	{
+ 263   2      		printf(" %bx \t", *(receive_value+index));
+ 264   2      	}
+ 265   1      
+ 266   1      	
+ 267   1      	return 0;
+ 268   1      
+ 269   1      }
+ 270          /***********************************************************************
+ 271          DESC: Reads a Block of DATA from SD card
+ 272          INPUT: No. of bytes, array
+ 273          RETURNS: Error flag
+ 274          CAUTION: None
+ 275          ************************************************************************/
+ 276          uint8_t read_block(uint16_t num_of_bytes, uint8_t *array)
+ 277          {
+ 278   1      
+ 279   1      	uint8_t time_out=0,receive_val,error_flag=0;
+ 280   1      	uint16_t index;
+ 281   1      	do
+ 282   1      	{
+ 283   2      		error_flag = SPI_Transfer( 0xFF, &receive_val);
+ 284   2      		time_out++;
+ 285   2      	}
+ 286   1      	while((time_out!=0) && (error_flag==no_errors) && (receive_val==0xFF));
+ 287   1      	if(time_out ==0)
+ 288   1      	{
+ 289   2      		error_flag=TIMEOUT_ERROR;
+ 290   2      		printf(" Timeout error");
+ 291   2      		
+ 292   2      	}
+ 293   1      	else if(error_flag!=no_errors)
+ 294   1      	{
+ 295   2      		error_flag=SPI_error;
+ 296   2      		printf(" SPI error");
+ 297   2      	}
+ 298   1      	else if(receive_val!=0x00 )
+ 299   1      	{
+ 300   2      		error_flag=SD_CARD_ERROR;
+ 301   2      		printf(" SD Card error");
+ 302   2      	}
+ 303   1      
+C51 COMPILER V6.02  SDCARD                                                                 11/30/2015 00:31:38 PAGE 6   
+
+ 304   1      
+ 305   1      	do
+ 306   1      	{	time_out=0;
+ 307   2      		error_flag = SPI_Transfer( 0xFF, &receive_val);
+ 308   2      		time_out++;
+ 309   2      	}
+ 310   1      	while((time_out!=0) && (error_flag==no_errors) && (receive_val==0xFF));
+ 311   1      
+ 312   1      	 if(time_out ==0)
+ 313   1      	{
+ 314   2      		error_flag=TIMEOUT_ERROR;
+ 315   2      		printf(" Timeout error ");
+ 316   2      
+ 317   2      	}
+ 318   1      	else if(error_flag!=no_errors)
+ 319   1      	{
+ 320   2      		error_flag=SPI_error;
+ 321   2      		printf(" SPI error ");
+ 322   2      	}
+ 323   1      	else if(receive_val==0xFE )
+ 324   1      	{
+ 325   2      		error_flag= no_errors;
+ 326   2      	}
+ 327   1      	else
+ 328   1      	{
+ 329   2      		error_flag= DATA_ERROR_TOKEN;
+ 330   2      		printf(" DATA_ERROR_TOKEN ");
+ 331   2      	}
+ 332   1      
+ 333   1      
+ 334   1      	for(index=0;index<num_of_bytes;index++)
+ 335   1      		{
+ 336   2      			SPI_Transfer( 0xFF, &receive_val);
+ 337   2      			array[index]=receive_val;	
+ 338   2      		}
+ 339   1      	
+ 340   1      	SPI_Transfer( 0xFF, &receive_val);
+ 341   1      	SPI_Transfer( 0xFF, &receive_val);
+ 342   1      	SPI_Transfer( 0xFF, &receive_val);
+ 343   1      	
+ 344   1      	return error_flag;
+ 345   1      } 
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1119    ----
+   CONSTANT SIZE    =    570    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      1      40
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
